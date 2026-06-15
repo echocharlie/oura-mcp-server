@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Claude Code local settings (machine-specific, do not publish)
+.claude/
+
+# Never commit a real Claude Desktop config (may contain tokens)
+claude_desktop_config.json
