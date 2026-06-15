@@ -71,6 +71,54 @@ Use the venv's Python interpreter and an absolute path to `server.py`. Fully qui
 Claude Desktop after editing. The `oura_*` tools then appear in the tools/connectors menu,
 ready to use alongside your Strava tools.
 
+## Usage & examples
+
+Once the server is connected, just ask Claude in plain language — it picks the right tool(s) and
+date ranges. A few patterns that work well:
+
+### Oura on its own
+
+- *"Pull my Oura daily summary for the last two weeks."*
+- *"Did my readiness drop after any night this month? Show me why."* → `oura_get_readiness_detail`
+- *"Break down last night's sleep stages and compare them to my 14-day average."* → `oura_get_sleep_detail`
+- *"Which days this month were most stressful, and how's my resilience trending?"* → `oura_get_stress_resilience`
+- *"How's my VO2 max and SpO2 trending over the last 90 days?"* → `oura_get_baselines`
+- *"What was my heart rate during yesterday's workout vs. overnight?"* → `oura_get_heart_rate`
+
+### The headline use case — Oura + Strava together
+
+Because both connectors are date-keyed, Claude can join them on `date` in one step:
+
+- *"Compare last month's Strava training load against my Oura readiness and sleep. Flag any days
+  I overreached (readiness or HRV dropped the morning after a hard session)."*
+- *"After my long runs, how much does my resting heart rate rise the next morning, and how long
+  until it recovers to baseline?"*
+- *"Do my hardest training days hurt that night's deep sleep? Show the correlation."*
+- *"Reconcile my Strava activities with Oura's logged workouts for the past month — did Oura catch
+  anything Strava missed?"* → `oura_get_workouts`
+- *"Build me a weekly table: Strava distance & suffer score next to Oura sleep score, avg HRV, and
+  next-day readiness, so I can see if my training plan is sustainable."*
+
+### What the data looks like
+
+Tools return compact CSV with units in the column names — easy for Claude to reason over and join.
+For example, `oura_get_daily_summary` returns rows like:
+
+```csv
+date,readiness_score,sleep_score,activity_score,total_sleep_h,resting_hr_bpm,avg_hrv_ms,temp_deviation_c,steps,active_cal,stress_high_min,day_summary
+2026-06-05,78,84,95,8.31,52,79,-0.16,8122,1211,360,stressful
+2026-06-06,63,60,97,5.14,74,12,-0.19,7667,941,240,stressful
+2026-06-07,85,87,96,7.95,60,37,0.13,7768,919,30,normal
+```
+
+Here the high-load, high-stress day (Jun 5: 1,211 active cal, 360 stressful min) is followed by a
+readiness crash (84→63), a resting-HR spike (52→74 bpm), and an HRV collapse (79→12 ms) — exactly
+the training-to-recovery signal this server is built to surface.
+
+> **Tip:** start broad with `oura_get_daily_summary`, then drill into a specific day or signal with
+> the detail tools (`oura_get_readiness_detail`, `oura_get_sleep_detail`). Keep date ranges modest
+> to stay fast and within Oura's rate limit.
+
 ## Notes & limits
 
 - **Read-only.** No tool writes to your Oura account.
