@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#faf9f5"/>
+      <stop offset="1" stop-color="#f2efe7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- window -->
+  <rect x="20" y="20" width="1160" height="780" rx="14" fill="url(#bg)" filter="url(#shadow)"/>
+
+  <!-- title bar -->
+  <rect x="20" y="20" width="1160" height="44" rx="14" fill="#efece3"/>
+  <rect x="20" y="50" width="1160" height="14" fill="#efece3"/>
+  <circle cx="48" cy="42" r="6" fill="#ff5f57"/>
+  <circle cx="68" cy="42" r="6" fill="#febc2e"/>
+  <circle cx="88" cy="42" r="6" fill="#28c840"/>
+  <text x="600" y="47" text-anchor="middle" font-size="13" fill="#8a8578">Claude</text>
+
+  <!-- user message -->
+  <rect x="690" y="92" width="470" height="44" rx="14" fill="#e8e4d8"/>
+  <text x="1140" y="119" text-anchor="end" font-size="15" fill="#3d3929">Pull my Oura daily summary for the last 7 days.</text>
+
+  <!-- assistant: tool call chip -->
+  <g>
+    <rect x="60" y="164" width="360" height="34" rx="8" fill="#ffffff" stroke="#e3dfd2"/>
+    <circle cx="82" cy="181" r="7" fill="#d97757"/>
+    <path d="M78.5 181 l2.4 2.4 l4.6 -4.8" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="100" y="186" font-size="13" fill="#3d3929"><tspan font-weight="600">oura</tspan> · oura_get_daily_summary</text>
+    <text x="404" y="186" text-anchor="end" font-size="12" fill="#9b9685">✓ ran</text>
+  </g>
+
+  <!-- assistant intro line -->
+  <text x="60" y="232" font-size="15" fill="#3d3929">Here's your last 7 days. One clear overreach signal stands out:</text>
+
+  <!-- table card -->
+  <rect x="60" y="252" width="1080" height="300" rx="10" fill="#ffffff" stroke="#e3dfd2"/>
+
+  <!-- table header -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12.5">
+    <rect x="61" y="253" width="1078" height="34" rx="10" fill="#f5f2ea"/>
+    <rect x="61" y="270" width="1078" height="17" fill="#f5f2ea"/>
+    <text x="80"  y="276" fill="#6b6657" font-weight="600">date</text>
+    <text x="196" y="276" fill="#6b6657" font-weight="600">readiness</text>
+    <text x="300" y="276" fill="#6b6657" font-weight="600">sleep</text>
+    <text x="372" y="276" fill="#6b6657" font-weight="600">activity</text>
+    <text x="470" y="276" fill="#6b6657" font-weight="600">sleep_h</text>
+    <text x="560" y="276" fill="#6b6657" font-weight="600">rhr</text>
+    <text x="628" y="276" fill="#6b6657" font-weight="600">hrv</text>
+    <text x="700" y="276" fill="#6b6657" font-weight="600">temp_dev</text>
+    <text x="812" y="276" fill="#6b6657" font-weight="600">steps</text>
+    <text x="908" y="276" fill="#6b6657" font-weight="600">active_cal</text>
+    <text x="1018" y="276" fill="#6b6657" font-weight="600">stress</text>
+  </g>
+
+  <!-- rows -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12.5" fill="#3d3929">
+    <!-- row 1 -->
+    <text x="80" y="312">2026-06-01</text><text x="220" y="312">81</text><text x="312" y="312">85</text><text x="392" y="312">88</text><text x="478" y="312">7.42</text><text x="566" y="312">53</text><text x="628" y="312">71</text><text x="720" y="312">-0.05</text><text x="812" y="312">9120</text><text x="930" y="312">540</text><text x="1024" y="312">45</text>
+    <line x1="76" y1="324" x2="1124" y2="324" stroke="#f0ece2"/>
+    <!-- row 2 -->
+    <text x="80" y="344">2026-06-02</text><text x="220" y="344">84</text><text x="312" y="344">88</text><text x="392" y="344">92</text><text x="478" y="344">8.10</text><text x="566" y="344">52</text><text x="628" y="344">78</text><text x="720" y="344">-0.10</text><text x="812" y="344">8430</text><text x="930" y="344">610</text><text x="1024" y="344">30</text>
+    <line x1="76" y1="356" x2="1124" y2="356" stroke="#f0ece2"/>
+    <!-- row 3 (hard day) -->
+    <rect x="61" y="360" width="1078" height="24" fill="#fbf1e9"/>
+    <text x="80" y="376">2026-06-05</text><text x="220" y="376">78</text><text x="312" y="376">84</text><text x="392" y="376">95</text><text x="478" y="376">8.31</text><text x="566" y="376">52</text><text x="628" y="376">79</text><text x="720" y="376">-0.16</text><text x="812" y="376">8122</text><text x="930" y="376" font-weight="700" fill="#c2410c">1211</text><text x="1024" y="376" font-weight="700" fill="#c2410c">360</text>
+    <line x1="76" y1="388" x2="1124" y2="388" stroke="#f0ece2"/>
+    <!-- row 4 (crash) -->
+    <rect x="61" y="392" width="1078" height="24" fill="#fde8e8"/>
+    <text x="80" y="408">2026-06-06</text><text x="220" y="408" font-weight="700" fill="#b91c1c">63</text><text x="312" y="408" font-weight="700" fill="#b91c1c">60</text><text x="392" y="408">97</text><text x="478" y="408" fill="#b91c1c">5.14</text><text x="566" y="408" font-weight="700" fill="#b91c1c">74</text><text x="628" y="408" font-weight="700" fill="#b91c1c">12</text><text x="720" y="408">-0.19</text><text x="812" y="408">7667</text><text x="930" y="408">941</text><text x="1024" y="408">240</text>
+    <line x1="76" y1="420" x2="1124" y2="420" stroke="#f0ece2"/>
+    <!-- row 5 (recovery) -->
+    <text x="80" y="440">2026-06-07</text><text x="220" y="440">85</text><text x="312" y="440">87</text><text x="392" y="440">96</text><text x="478" y="440">7.95</text><text x="566" y="440">60</text><text x="628" y="440">37</text><text x="720" y="440">0.13</text><text x="812" y="440">7768</text><text x="930" y="440">919</text><text x="1024" y="440">30</text>
+    <line x1="76" y1="452" x2="1124" y2="452" stroke="#f0ece2"/>
+  </g>
+
+  <!-- units footnote in card -->
+  <text x="80" y="478" font-size="11.5" fill="#9b9685" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">scores 0–100 · sleep_h hours · rhr/hrv bpm/ms · temp_dev °C · stress = stressful minutes</text>
+
+  <!-- callout -->
+  <rect x="60" y="500" width="1080" height="40" rx="8" fill="#fbf1e9" stroke="#f0d9c8"/>
+  <text x="80" y="525" font-size="13.5" fill="#7c3a16">⚠  Jun 5 was a high-load, high-stress day (1,211 active cal, 360 stressful min). The next morning readiness fell 84→63, resting HR spiked 52→74 bpm, and HRV collapsed 79→12 ms — classic overreach.</text>
+
+  <!-- assistant follow-up text -->
+  <text x="60" y="582" font-size="15" fill="#3d3929">Want me to line this up against your Strava training load to confirm which session drove it?</text>
+
+  <!-- input box -->
+  <rect x="60" y="724" width="1080" height="48" rx="24" fill="#ffffff" stroke="#e3dfd2"/>
+  <text x="86" y="753" font-size="14" fill="#b3ae9f">Reply to Claude…</text>
+  <circle cx="1112" cy="748" r="16" fill="#d97757"/>
+  <path d="M1112 741 l0 14 M1106 747 l6 -6 l6 6" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- sample-data watermark -->
+  <text x="1140" y="612" text-anchor="end" font-size="11" fill="#b3ae9f" font-style="italic">Illustrative example — sample data, not real biometrics</text>
+</svg>

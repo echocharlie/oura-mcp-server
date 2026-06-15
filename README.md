@@ -8,6 +8,10 @@ keyed by ISO date (`YYYY-MM-DD`), so Claude can join Oura recovery data against 
 load on `date` and answer questions like *"how did last week's hard sessions affect my sleep,
 stress, and next-day readiness?"* in one reasoning step.
 
+![Claude running the Oura connector — daily summary with an overreach day highlighted](docs/demo.png)
+
+<sub>Illustrative example using sample data, not real biometrics.</sub>
+
 ## Tools
 
 | Tool | What it returns | Default window |
