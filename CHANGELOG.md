@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-02
+
+### Fixed
+
+- Explicit JSON nulls from the Oura API (e.g. `day_summary: null`) rendered as a literal
+  `None` in CSV output; all nullable fields now render blank.
+- Pagination hitting the internal 50-page cap silently dropped remaining data; tools now
+  append an explicit truncation note telling the agent to narrow the date range.
+
+### Changed
+
+- Multi-collection tools (`daily_summary`, `stress_resilience`, `baselines`) fetch their
+  collections concurrently instead of sequentially (~5x faster daily summary).
+- Heart-rate default time window is now timezone-aware; mixed naive/aware inputs are
+  normalized instead of raising.
+- Verified `daily_cardiovascular_age` and `vO2_max` endpoint paths against the live API.
+
 ## [0.1.0] - 2026-06-15
 
 Initial release. A read-only [FastMCP](https://github.com/jlowin/fastmcp) server over the
@@ -34,5 +51,6 @@ for training and recovery analysis.
 - Documentation: README with tool reference and an Oura + Strava usage/examples section,
   `docs/SETUP.md` setup & troubleshooting guide, and `claude_desktop_config.example.json`.
 
-[Unreleased]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/echocharlie/oura-mcp-server/releases/tag/v0.1.0

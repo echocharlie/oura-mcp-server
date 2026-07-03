@@ -16,6 +16,7 @@ Design notes:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import date, datetime, timedelta
@@ -83,13 +84,16 @@ async def _fetch(
     params: dict[str, Any] | None = None,
     *,
     max_pages: int = 50,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """GET a usercollection endpoint, following `next_token` pagination.
 
-    Returns the concatenated `data` list. `max_pages` bounds runaway pagination.
+    Returns (records, truncated). `truncated` is True when the internal
+    `max_pages` cap stopped pagination with more data still available —
+    callers must surface that to the agent rather than dropping it silently.
     """
     params = dict(params or {})
     out: list[dict] = []
+    token: str | None = None
     for _ in range(max_pages):
         resp = await client.get(f"/{path}", params=params)
         _raise_for_status(resp, path)
@@ -99,7 +103,10 @@ async def _fetch(
         if not token:
             break
         params["next_token"] = token
-    return out
+    return out, bool(token)
+
+
+_TRUNC_NOTE = "\n# note: pagination was truncated by the server's page cap; narrow the date range for complete data."
 
 
 def _resolve_dates(start_date: str | None, end_date: str | None, default_days: int) -> tuple[str, str]:
@@ -124,6 +131,13 @@ def _parse_date(value: str) -> date:
         raise RuntimeError(f"Invalid date '{value}'. Use ISO format, e.g. 2026-06-01.")
 
 
+def _s(value: Any) -> Any:
+    """Blank for None. Oura sends explicit JSON nulls (e.g. day_summary: null),
+    which dict.get(key, "") does NOT catch — the key exists, so the default is
+    ignored and the null would render as a literal 'None' in CSV output."""
+    return "" if value is None else value
+
+
 def _h(seconds: Any) -> str:
     """Seconds -> hours, 2dp. Blank if missing."""
     if seconds in (None, ""):
@@ -139,7 +153,7 @@ def _min(seconds: Any) -> str:
 
 
 def _g(d: dict, *keys: str, default: Any = "") -> Any:
-    """Nested get: _g(rec, 'spo2_percentage', 'average')."""
+    """Nested get: _g(rec, 'spo2_percentage', 'average'). None-safe."""
     cur: Any = d
     for k in keys:
         if not isinstance(cur, dict):
@@ -206,11 +220,19 @@ async def oura_get_daily_summary(
     s, e = _resolve_dates(start_date, end_date, default_days=30)
     params = {"start_date": s, "end_date": e}
     async with _client() as client:
-        readiness = _by_day(await _fetch(client, "daily_readiness", params))
-        daily_sleep = _by_day(await _fetch(client, "daily_sleep", params))
-        activity = _by_day(await _fetch(client, "daily_activity", params))
-        stress = _by_day(await _fetch(client, "daily_stress", params))
-        sleep = _main_sleep_by_day(await _fetch(client, "sleep", params))
+        results = await asyncio.gather(
+            _fetch(client, "daily_readiness", params),
+            _fetch(client, "daily_sleep", params),
+            _fetch(client, "daily_activity", params),
+            _fetch(client, "daily_stress", params),
+            _fetch(client, "sleep", params),
+        )
+    truncated = any(t for _, t in results)
+    readiness = _by_day(results[0][0])
+    daily_sleep = _by_day(results[1][0])
+    activity = _by_day(results[2][0])
+    stress = _by_day(results[3][0])
+    sleep = _main_sleep_by_day(results[4][0])
 
     days = sorted(set(readiness) | set(daily_sleep) | set(activity) | set(stress) | set(sleep))
     header = (
@@ -224,15 +246,15 @@ async def oura_get_daily_summary(
             stress.get(d, {}), sleep.get(d, {}),
         )
         lines.append(
-            f"{d},{r.get('score','')},{ds.get('score','')},{ac.get('score','')},"
-            f"{_h(sl.get('total_sleep_duration'))},{sl.get('lowest_heart_rate','')},"
-            f"{sl.get('average_hrv','')},{r.get('temperature_deviation','')},"
-            f"{ac.get('steps','')},{ac.get('active_calories','')},"
-            f"{_min(st.get('stress_high'))},{st.get('day_summary','')}"
+            f"{d},{_s(r.get('score'))},{_s(ds.get('score'))},{_s(ac.get('score'))},"
+            f"{_h(sl.get('total_sleep_duration'))},{_s(sl.get('lowest_heart_rate'))},"
+            f"{_s(sl.get('average_hrv'))},{_s(r.get('temperature_deviation'))},"
+            f"{_s(ac.get('steps'))},{_s(ac.get('active_calories'))},"
+            f"{_min(st.get('stress_high'))},{_s(st.get('day_summary'))}"
         )
     if len(lines) == 1:
         return f"No Oura data found for {s}..{e}. Check the date range or that your ring synced."
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -258,30 +280,30 @@ async def oura_get_sleep_detail(
     """
     s, e = _resolve_dates(start_date, end_date, default_days=14)
     async with _client() as client:
-        periods = await _fetch(client, "sleep", {"start_date": s, "end_date": e})
+        periods, truncated = await _fetch(client, "sleep", {"start_date": s, "end_date": e})
 
     if not periods:
         return f"No sleep records for {s}..{e}."
     if response_format == "detailed":
-        return json.dumps(periods, indent=2)
+        return json.dumps(periods, indent=2) + (_TRUNC_NOTE if truncated else "")
 
     header = (
         "date,type,bedtime_start,bedtime_end,total_sleep_h,time_in_bed_h,deep_h,rem_h,"
         "light_h,awake_h,efficiency_pct,latency_min,avg_hr_bpm,lowest_hr_bpm,avg_hrv_ms,resp_rate_brpm"
     )
     lines = [header]
-    for p in sorted(periods, key=lambda x: (x.get("day", ""), x.get("bedtime_start", ""))):
+    for p in sorted(periods, key=lambda x: (x.get("day", ""), x.get("bedtime_start", "") or "")):
         lines.append(
-            f"{p.get('day','')},{p.get('type','')},"
+            f"{_s(p.get('day'))},{_s(p.get('type'))},"
             f"{(p.get('bedtime_start') or '')[11:16]},{(p.get('bedtime_end') or '')[11:16]},"
             f"{_h(p.get('total_sleep_duration'))},{_h(p.get('time_in_bed'))},"
             f"{_h(p.get('deep_sleep_duration'))},{_h(p.get('rem_sleep_duration'))},"
             f"{_h(p.get('light_sleep_duration'))},{_h(p.get('awake_time'))},"
-            f"{p.get('efficiency','')},{_min(p.get('latency'))},"
-            f"{p.get('average_heart_rate','')},{p.get('lowest_heart_rate','')},"
-            f"{p.get('average_hrv','')},{p.get('average_breath','')}"
+            f"{_s(p.get('efficiency'))},{_min(p.get('latency'))},"
+            f"{_s(p.get('average_heart_rate'))},{_s(p.get('lowest_heart_rate'))},"
+            f"{_s(p.get('average_hrv'))},{_s(p.get('average_breath'))}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -304,7 +326,7 @@ async def oura_get_readiness_detail(
     """
     s, e = _resolve_dates(start_date, end_date, default_days=30)
     async with _client() as client:
-        records = await _fetch(client, "daily_readiness", {"start_date": s, "end_date": e})
+        records, truncated = await _fetch(client, "daily_readiness", {"start_date": s, "end_date": e})
 
     if not records:
         return f"No readiness records for {s}..{e}."
@@ -316,12 +338,12 @@ async def oura_get_readiness_detail(
     for r in sorted(records, key=lambda x: x.get("day", "")):
         c = r.get("contributors") or {}
         lines.append(
-            f"{r.get('day','')},{r.get('score','')},{r.get('temperature_deviation','')},"
-            f"{c.get('activity_balance','')},{c.get('body_temperature','')},{c.get('hrv_balance','')},"
-            f"{c.get('previous_day_activity','')},{c.get('previous_night','')},"
-            f"{c.get('recovery_index','')},{c.get('resting_heart_rate','')},{c.get('sleep_balance','')}"
+            f"{_s(r.get('day'))},{_s(r.get('score'))},{_s(r.get('temperature_deviation'))},"
+            f"{_s(c.get('activity_balance'))},{_s(c.get('body_temperature'))},{_s(c.get('hrv_balance'))},"
+            f"{_s(c.get('previous_day_activity'))},{_s(c.get('previous_night'))},"
+            f"{_s(c.get('recovery_index'))},{_s(c.get('resting_heart_rate'))},{_s(c.get('sleep_balance'))}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -345,8 +367,12 @@ async def oura_get_stress_resilience(
     s, e = _resolve_dates(start_date, end_date, default_days=30)
     params = {"start_date": s, "end_date": e}
     async with _client() as client:
-        stress = _by_day(await _fetch(client, "daily_stress", params))
-        resilience = _by_day(await _fetch(client, "daily_resilience", params))
+        (stress_recs, t1), (resilience_recs, t2) = await asyncio.gather(
+            _fetch(client, "daily_stress", params),
+            _fetch(client, "daily_resilience", params),
+        )
+    stress = _by_day(stress_recs)
+    resilience = _by_day(resilience_recs)
 
     days = sorted(set(stress) | set(resilience))
     if not days:
@@ -361,10 +387,10 @@ async def oura_get_stress_resilience(
         c = rs.get("contributors") or {}
         lines.append(
             f"{d},{_min(st.get('stress_high'))},{_min(st.get('recovery_high'))},"
-            f"{st.get('day_summary','')},{rs.get('level','')},"
-            f"{c.get('sleep_recovery','')},{c.get('daytime_recovery','')},{c.get('stress','')}"
+            f"{_s(st.get('day_summary'))},{_s(rs.get('level'))},"
+            f"{_s(c.get('sleep_recovery'))},{_s(c.get('daytime_recovery'))},{_s(c.get('stress'))}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if (t1 or t2) else "")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -386,13 +412,13 @@ async def oura_get_workouts(
     """
     s, e = _resolve_dates(start_date, end_date, default_days=30)
     async with _client() as client:
-        workouts = await _fetch(client, "workout", {"start_date": s, "end_date": e})
+        workouts, truncated = await _fetch(client, "workout", {"start_date": s, "end_date": e})
 
     if not workouts:
         return f"No Oura-logged workouts for {s}..{e}."
     header = "date,activity,intensity,start_time,end_time,duration_min,distance_km,calories,source,label"
     lines = [header]
-    for w in sorted(workouts, key=lambda x: x.get("start_datetime", "")):
+    for w in sorted(workouts, key=lambda x: x.get("start_datetime", "") or ""):
         start, end_dt = w.get("start_datetime") or "", w.get("end_datetime") or ""
         dur = ""
         if start and end_dt:
@@ -403,11 +429,11 @@ async def oura_get_workouts(
         dist = w.get("distance")
         dist_km = f"{dist / 1000:.2f}" if isinstance(dist, (int, float)) else ""
         lines.append(
-            f"{w.get('day','')},{w.get('activity','')},{w.get('intensity','')},"
+            f"{_s(w.get('day'))},{_s(w.get('activity'))},{_s(w.get('intensity'))},"
             f"{start[11:16]},{end_dt[11:16]},{dur},{dist_km},"
-            f"{w.get('calories','')},{w.get('source','')},{w.get('label') or ''}"
+            f"{_s(w.get('calories'))},{_s(w.get('source'))},{w.get('label') or ''}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -431,9 +457,14 @@ async def oura_get_baselines(
     s, e = _resolve_dates(start_date, end_date, default_days=90)
     params = {"start_date": s, "end_date": e}
     async with _client() as client:
-        spo2 = _by_day(await _fetch(client, "daily_spo2", params))
-        cva = _by_day(await _fetch(client, "daily_cardiovascular_age", params))
-        vo2 = _by_day(await _fetch(client, "vO2_max", params))
+        (spo2_recs, t1), (cva_recs, t2), (vo2_recs, t3) = await asyncio.gather(
+            _fetch(client, "daily_spo2", params),
+            _fetch(client, "daily_cardiovascular_age", params),
+            _fetch(client, "vO2_max", params),
+        )
+    spo2 = _by_day(spo2_recs)
+    cva = _by_day(cva_recs)
+    vo2 = _by_day(vo2_recs)
 
     days = sorted(set(spo2) | set(cva) | set(vo2))
     if not days:
@@ -443,10 +474,10 @@ async def oura_get_baselines(
     for d in days:
         sp, cv, vo = spo2.get(d, {}), cva.get(d, {}), vo2.get(d, {})
         lines.append(
-            f"{d},{_g(sp, 'spo2_percentage', 'average')},{sp.get('breathing_disturbance_index','')},"
-            f"{cv.get('vascular_age','')},{vo.get('vo2_max','')}"
+            f"{d},{_g(sp, 'spo2_percentage', 'average')},{_s(sp.get('breathing_disturbance_index'))},"
+            f"{_s(cv.get('vascular_age'))},{_s(vo.get('vo2_max'))}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if (t1 or t2 or t3) else "")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -469,24 +500,32 @@ async def oura_get_heart_rate(
                plus a final 'all' row.
     raw     -> CSV: timestamp, bpm, source (capped at `limit`; narrow the window for more).
     """
-    end = datetime.fromisoformat(end_datetime) if end_datetime else datetime.now()
+    # timezone-aware defaults: Oura timestamps carry offsets, and a naive local
+    # "now" can silently shift the window for late-night queries.
+    end = datetime.fromisoformat(end_datetime) if end_datetime else datetime.now().astimezone()
     start = datetime.fromisoformat(start_datetime) if start_datetime else end - timedelta(days=1)
+    if (start.tzinfo is None) != (end.tzinfo is None):
+        # normalize mixed naive/aware inputs so comparison below can't crash
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=end.tzinfo)
+        else:
+            end = end.replace(tzinfo=start.tzinfo)
     if start > end:
         raise RuntimeError("start_datetime is after end_datetime. Swap them.")
     params = {"start_datetime": start.isoformat(), "end_datetime": end.isoformat()}
     async with _client() as client:
-        samples = await _fetch(client, "heartrate", params)
+        samples, truncated = await _fetch(client, "heartrate", params)
 
     if not samples:
         return f"No heart-rate samples for {start.isoformat()}..{end.isoformat()}."
 
     if response_format == "summary":
         buckets: dict[str, list[int]] = {}
-        for s in samples:
-            bpm = s.get("bpm")
+        for smp in samples:
+            bpm = smp.get("bpm")
             if bpm is None:
                 continue
-            buckets.setdefault(s.get("source", "unknown"), []).append(bpm)
+            buckets.setdefault(smp.get("source") or "unknown", []).append(bpm)
         lines = ["source,samples,min_bpm,avg_bpm,max_bpm"]
         all_bpm: list[int] = []
         for src in sorted(buckets):
@@ -495,16 +534,16 @@ async def oura_get_heart_rate(
             lines.append(f"{src},{len(v)},{min(v)},{round(sum(v)/len(v))},{max(v)}")
         if all_bpm:
             lines.append(f"all,{len(all_bpm)},{min(all_bpm)},{round(sum(all_bpm)/len(all_bpm))},{max(all_bpm)}")
-        return "\n".join(lines)
+        return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
     total = len(samples)
     rows = samples[:limit]
     lines = ["timestamp,bpm,source"]
-    for s in rows:
-        lines.append(f"{s.get('timestamp','')},{s.get('bpm','')},{s.get('source','')}")
+    for smp in rows:
+        lines.append(f"{_s(smp.get('timestamp'))},{_s(smp.get('bpm'))},{_s(smp.get('source'))}")
     if total > limit:
         lines.append(f"# showing first {limit} of {total} samples; narrow the time window for full coverage.")
-    return "\n".join(lines)
+    return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
 
 if __name__ == "__main__":
