@@ -1,5 +1,7 @@
 # Oura MCP server
 
+[![CI](https://github.com/echocharlie/oura-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/echocharlie/oura-mcp-server/actions/workflows/ci.yml)
+
 A Model Context Protocol (MCP) server that gives Claude **read-only** access to your
 [Oura ring](https://ouraring.com) biometrics via the [Oura API v2](https://cloud.ouraring.com/v2/docs).
 
@@ -17,6 +19,7 @@ stress, and next-day readiness?"* in one reasoning step.
 | Tool | What it returns | Default window |
 |------|-----------------|----------------|
 | `oura_get_daily_summary` | **Start here.** One row/day: readiness, sleep & activity scores, total sleep, bedtime, resting HR, HRV, respiratory rate, temp deviation, breathing disturbance, steps, active calories, daytime stress. The cross-source join table. | 30 days |
+| `oura_get_sleep_time` | Oura's **bedtime guidance**: optimal bedtime window + recommendation (what Oura thinks you *should* do, vs. `daily_summary`'s actual bedtime). | 30 days |
 | `oura_get_sleep_detail` | Per-night architecture: bedtime, sleep stages (deep/REM/light), efficiency, latency, avg/lowest HR, HRV, respiratory rate. | 14 days |
 | `oura_get_readiness_detail` | Readiness with every contributor (hrv_balance, resting HR, recovery index, body temp, previous-day activity, sleep balance…) — explains *why* readiness moved. | 30 days |
 | `oura_get_stress_resilience` | Daytime stress vs. recovery minutes, day summary, and long-term resilience level + contributors. | 30 days |
@@ -50,6 +53,13 @@ Never commit your real token — `.env` is gitignored.
 
 ```bash
 fastmcp dev server.py     # opens the MCP Inspector to exercise each tool manually
+```
+
+Run the tests (offline — no token or network needed):
+
+```bash
+pip install -e ".[dev]"
+pytest -q
 ```
 
 ## Install in Claude Desktop
@@ -109,15 +119,16 @@ Tools return compact CSV with units in the column names — easy for Claude to r
 For example, `oura_get_daily_summary` returns rows like:
 
 ```csv
-date,readiness_score,sleep_score,activity_score,total_sleep_h,resting_hr_bpm,avg_hrv_ms,temp_deviation_c,steps,active_cal,stress_high_min,day_summary
-2026-06-05,78,84,95,8.31,52,79,-0.16,8122,1211,360,stressful
-2026-06-06,63,60,97,5.14,74,12,-0.19,7667,941,240,stressful
-2026-06-07,85,87,96,7.95,60,37,0.13,7768,919,30,normal
+date,readiness_score,sleep_score,activity_score,total_sleep_h,bedtime,resting_hr_bpm,avg_hrv_ms,resp_rate_brpm,temp_deviation_c,breathing_disturbance_idx,steps,active_cal,stress_high_min,day_summary
+2026-06-05,78,84,95,8.31,23:36,52,79,13.375,-0.16,0,8122,1211,360,stressful
+2026-06-06,63,60,97,5.14,05:49,74,12,18.25,-0.19,6,7667,941,240,stressful
+2026-06-07,85,87,96,7.95,01:01,60,37,17.125,0.13,1,7768,919,30,normal
 ```
 
 Here the high-load, high-stress day (Jun 5: 1,211 active cal, 360 stressful min) is followed by a
 readiness crash (84→63), a resting-HR spike (52→74 bpm), and an HRV collapse (79→12 ms) — exactly
-the training-to-recovery signal this server is built to surface.
+the training-to-recovery signal this server is built to surface. Note the leading indicators moving
+with it: respiratory rate jumps 13.4→18.3 brpm and breathing disturbance 0→6 on the same night.
 
 > **Tip:** start broad with `oura_get_daily_summary`, then drill into a specific day or signal with
 > the detail tools (`oura_get_readiness_detail`, `oura_get_sleep_detail`). Keep date ranges modest

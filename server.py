@@ -169,6 +169,18 @@ def _by_day(records: list[dict]) -> dict[str, dict]:
     return {r["day"]: r for r in records if r.get("day")}
 
 
+def _offset_to_hhmm(seconds: Any) -> str:
+    """Oura sleep_time offsets are seconds from local midnight; decode to HH:MM.
+
+    Negative offsets mean before midnight (e.g. -3600 -> 23:00), so wrap with modulo
+    rather than emitting a negative hour.
+    """
+    if seconds is None:
+        return ""
+    s = int(seconds) % 86400
+    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}"
+
+
 def _main_sleep_by_day(periods: list[dict]) -> dict[str, dict]:
     """From per-period sleep records, pick the main nightly sleep for each day.
 
@@ -316,6 +328,70 @@ async def oura_get_sleep_detail(
             f"{_s(p.get('average_heart_rate'))},{_s(p.get('lowest_heart_rate'))},"
             f"{_s(p.get('average_hrv'))},{_s(p.get('average_breath'))}"
         )
+    return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+async def oura_get_sleep_time(
+    start_date: Annotated[str | None, Field(description="ISO start date (YYYY-MM-DD). Defaults to 30 days before end_date.")] = None,
+    end_date: Annotated[str | None, Field(description="ISO end date (YYYY-MM-DD), inclusive. Defaults to today.")] = None,
+) -> str:
+    """Oura's own bedtime guidance: the optimal bedtime window and what it recommends.
+
+    Use to answer "am I going to bed at the right time?" — distinct from
+    oura_get_daily_summary's `bedtime`, which reports when you ACTUALLY slept. This is
+    what Oura thinks you SHOULD do, derived from your circadian/temperature data.
+
+    CSV columns:
+      date, optimal_bedtime_start, optimal_bedtime_end (local HH:MM; blank when Oura
+      couldn't compute a window), recommendation, status
+
+    recommendation is one of:
+      follow_optimal_bedtime  — you're aligned; keep the current window
+      earlier_bedtime         — go to bed earlier
+      later_bedtime           — go to bed later
+      earlier_wake_up_time / later_wake_up_time — adjust the wake side instead
+
+    status is one of:
+      optimal_found           — a concrete window was computed (times populated)
+      only_recommended_found  — Oura has a direction but NOT enough data for a window,
+                                so the time columns are blank. This is normal, not an error.
+      not_enough_nights / no_data — insufficient history in the range.
+
+    Note: Oura returns these times as raw second-offsets from local midnight; this tool
+    decodes them to HH:MM. A run of identical `earlier_bedtime` rows means Oura has been
+    persistently flagging late sleep timing — worth reading as a trend, not a single day.
+    """
+    s, e = _resolve_dates(start_date, end_date, default_days=30)
+    async with _client() as client:
+        records, truncated = await _fetch(client, "sleep_time", {"start_date": s, "end_date": e})
+
+    if not records:
+        return (f"No sleep_time records for {s}..{e}. Oura needs several nights of history "
+                "to generate bedtime guidance; try a wider date range.")
+    header = "date,optimal_bedtime_start,optimal_bedtime_end,recommendation,status"
+    lines = [header]
+    recs: list[str] = []
+    for r in sorted(records, key=lambda x: x.get("day", "")):
+        ob = r.get("optimal_bedtime") or {}
+        rec = _s(r.get("recommendation"))
+        if rec:
+            recs.append(str(rec))
+        lines.append(
+            f"{_s(r.get('day'))},{_offset_to_hhmm(ob.get('start_offset'))},"
+            f"{_offset_to_hhmm(ob.get('end_offset'))},{rec},{_s(r.get('status'))}"
+        )
+    # Surface a persistent recommendation as a trend rather than making the agent eyeball it.
+    if recs:
+        last = recs[-1]
+        streak = 0
+        for x in reversed(recs):
+            if x != last:
+                break
+            streak += 1
+        if streak >= 3:
+            lines.append(f"# trend: '{last}' for the last {streak} consecutive record(s) "
+                         "— a persistent recommendation, not a one-off.")
     return "\n".join(lines) + (_TRUNC_NOTE if truncated else "")
 
 

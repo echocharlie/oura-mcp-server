@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-14
+
+Hardening release: closes the last endpoint gap and adds the test/CI safety net the
+project had been missing since 0.1.0.
+
+### Added
+
+- **`oura_get_sleep_time`** — Oura's own bedtime guidance (optimal bedtime window +
+  recommendation), the last documented endpoint with data that wasn't exposed. Distinct
+  from `daily_summary`'s `bedtime`, which reports when you *actually* slept; this reports
+  what Oura thinks you *should* do. The API returns the window as raw second-offsets from
+  local midnight (unusable as-is), so the tool decodes them to local `HH:MM` and wraps
+  negative offsets correctly (`-3600` → `23:00`, not a negative hour). When a
+  recommendation repeats for 3+ consecutive records the tool appends a trend footer, since
+  a persistent recommendation means something a single row does not.
+- **`tests/`** — 23 offline regression tests (network is monkeypatched; no token needed).
+  They cover the bugs this project has actually shipped: literal-`None` leakage, silent
+  pagination truncation, PWV/VO2 coverage, sleep_time offset decoding, actionable errors,
+  and the nap-vs-long_sleep selection rule. Verified by mutation testing — reintroducing
+  each historical bug makes the corresponding test fail.
+- **GitHub Actions CI** — `compileall` + full test suite on Python 3.10 and 3.12.
+- `dev` extra (`pip install -e ".[dev]"`) and pytest config in `pyproject.toml`.
+
 ## [0.2.0] - 2026-07-14
 
 Metric-coverage release. An audit against the live API found several high-value fields
@@ -76,7 +99,8 @@ for training and recovery analysis.
 - Documentation: README with tool reference and an Oura + Strava usage/examples section,
   `docs/SETUP.md` setup & troubleshooting guide, and `claude_desktop_config.example.json`.
 
-[Unreleased]: https://github.com/echocharlie/oura-mcp-server/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/echocharlie/oura-mcp-server/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/echocharlie/oura-mcp-server/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/echocharlie/oura-mcp-server/releases/tag/v0.1.0
