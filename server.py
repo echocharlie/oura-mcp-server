@@ -210,12 +210,18 @@ async def oura_get_daily_summary(
 
     CSV columns (units in the name):
       date, readiness_score(0-100), sleep_score(0-100), activity_score(0-100),
-      total_sleep_h, resting_hr_bpm (lowest nightly HR, a resting-HR proxy),
-      avg_hrv_ms, temp_deviation_c (body temp vs baseline), steps,
-      active_cal, stress_high_min (stressful daytime minutes), day_summary
+      total_sleep_h, bedtime (HH:MM local, when sleep started),
+      resting_hr_bpm (lowest nightly HR, a resting-HR proxy), avg_hrv_ms,
+      resp_rate_brpm (overnight respiratory rate), temp_deviation_c (body temp vs
+      baseline), breathing_disturbance_idx, steps, active_cal,
+      stress_high_min (stressful daytime minutes), day_summary
 
     Defaults to the last 30 days. Higher readiness/sleep/activity scores are better;
     a rising resting_hr or positive temp_deviation often signals incomplete recovery.
+    resp_rate_brpm and breathing_disturbance_idx are leading illness/strain flags —
+    a sustained rise in either often precedes a subjective sense of getting sick.
+    bedtime is included because sleep *timing* (not just duration) drives next-day
+    recovery, and it anchors any analysis of late meals/alcohol relative to sleep.
     """
     s, e = _resolve_dates(start_date, end_date, default_days=30)
     params = {"start_date": s, "end_date": e}
@@ -226,6 +232,7 @@ async def oura_get_daily_summary(
             _fetch(client, "daily_activity", params),
             _fetch(client, "daily_stress", params),
             _fetch(client, "sleep", params),
+            _fetch(client, "daily_spo2", params),
         )
     truncated = any(t for _, t in results)
     readiness = _by_day(results[0][0])
@@ -233,22 +240,28 @@ async def oura_get_daily_summary(
     activity = _by_day(results[2][0])
     stress = _by_day(results[3][0])
     sleep = _main_sleep_by_day(results[4][0])
+    spo2 = _by_day(results[5][0])
 
-    days = sorted(set(readiness) | set(daily_sleep) | set(activity) | set(stress) | set(sleep))
+    days = sorted(set(readiness) | set(daily_sleep) | set(activity) | set(stress)
+                  | set(sleep) | set(spo2))
     header = (
-        "date,readiness_score,sleep_score,activity_score,total_sleep_h,resting_hr_bpm,"
-        "avg_hrv_ms,temp_deviation_c,steps,active_cal,stress_high_min,day_summary"
+        "date,readiness_score,sleep_score,activity_score,total_sleep_h,bedtime,"
+        "resting_hr_bpm,avg_hrv_ms,resp_rate_brpm,temp_deviation_c,"
+        "breathing_disturbance_idx,steps,active_cal,stress_high_min,day_summary"
     )
     lines = [header]
     for d in days:
-        r, ds, ac, st, sl = (
+        r, ds, ac, st, sl, sp = (
             readiness.get(d, {}), daily_sleep.get(d, {}), activity.get(d, {}),
-            stress.get(d, {}), sleep.get(d, {}),
+            stress.get(d, {}), sleep.get(d, {}), spo2.get(d, {}),
         )
+        bedtime = (sl.get("bedtime_start") or "")[11:16]
         lines.append(
             f"{d},{_s(r.get('score'))},{_s(ds.get('score'))},{_s(ac.get('score'))},"
-            f"{_h(sl.get('total_sleep_duration'))},{_s(sl.get('lowest_heart_rate'))},"
-            f"{_s(sl.get('average_hrv'))},{_s(r.get('temperature_deviation'))},"
+            f"{_h(sl.get('total_sleep_duration'))},{bedtime},"
+            f"{_s(sl.get('lowest_heart_rate'))},{_s(sl.get('average_hrv'))},"
+            f"{_s(sl.get('average_breath'))},{_s(r.get('temperature_deviation'))},"
+            f"{_s(sp.get('breathing_disturbance_index'))},"
             f"{_s(ac.get('steps'))},{_s(ac.get('active_calories'))},"
             f"{_min(st.get('stress_high'))},{_s(st.get('day_summary'))}"
         )
@@ -441,18 +454,24 @@ async def oura_get_baselines(
     start_date: Annotated[str | None, Field(description="ISO start date (YYYY-MM-DD). Defaults to 90 days before end_date.")] = None,
     end_date: Annotated[str | None, Field(description="ISO end date (YYYY-MM-DD), inclusive. Defaults to today.")] = None,
 ) -> str:
-    """Slow-moving health baselines: SpO2, breathing, cardiovascular age, VO2 max.
+    """Slow-moving health baselines: SpO2, breathing, arterial stiffness, VO2 max.
 
     These trend over weeks/months, so the default window is 90 days. Use to track
-    long-term aerobic fitness and respiratory health alongside training history.
-    Many fields are sparse (e.g. VO2 max updates infrequently; rows show blanks when
-    a metric wasn't measured that day).
+    long-term vascular and aerobic health alongside training history.
 
     CSV columns:
       date, spo2_avg_pct (overnight blood-oxygen %), breathing_disturbance_index,
-      vascular_age_years, vo2_max_ml_kg_min
+      pulse_wave_velocity_ms, vascular_age_years, vo2_max_ml_kg_min
 
-    Note: cardiovascular_age and vO2_max require a compatible ring/firmware and enough data.
+    pulse_wave_velocity_ms (m/s) is the RAW arterial-stiffness measurement and the most
+    clinically meaningful vascular metric here — lower is better/more elastic; it is the
+    same class of measure (PWV) used in hypertension research. vascular_age_years is a
+    derived presentation of it, so prefer PWV when tracking real change.
+
+    IMPORTANT — sparsity: vo2_max is a measurement EVENT, not a daily value (often only
+    a handful of readings per quarter), so most rows will be blank for it. Blank does NOT
+    mean "no VO2 data" — read the footer, which reports the most recent reading in the
+    window. cardiovascular_age/VO2 also require a compatible ring/firmware.
     """
     s, e = _resolve_dates(start_date, end_date, default_days=90)
     params = {"start_date": s, "end_date": e}
@@ -469,14 +488,27 @@ async def oura_get_baselines(
     days = sorted(set(spo2) | set(cva) | set(vo2))
     if not days:
         return f"No baseline records (SpO2/cardio-age/VO2max) for {s}..{e}."
-    header = "date,spo2_avg_pct,breathing_disturbance_index,vascular_age_years,vo2_max_ml_kg_min"
+    header = ("date,spo2_avg_pct,breathing_disturbance_index,pulse_wave_velocity_ms,"
+              "vascular_age_years,vo2_max_ml_kg_min")
     lines = [header]
     for d in days:
         sp, cv, vo = spo2.get(d, {}), cva.get(d, {}), vo2.get(d, {})
+        pwv = cv.get("pulse_wave_velocity")
         lines.append(
             f"{d},{_g(sp, 'spo2_percentage', 'average')},{_s(sp.get('breathing_disturbance_index'))},"
+            f"{round(pwv, 2) if isinstance(pwv, (int, float)) else ''},"
             f"{_s(cv.get('vascular_age'))},{_s(vo.get('vo2_max'))}"
         )
+
+    # vo2_max is sparse; surface the latest reading so blanks aren't misread as "no data".
+    vo2_days = sorted(d for d, v in vo2.items() if v.get("vo2_max") is not None)
+    if vo2_days:
+        last = vo2_days[-1]
+        lines.append(f"# vo2_max is measured infrequently: {len(vo2_days)} reading(s) in this window; "
+                     f"latest = {vo2[last]['vo2_max']} on {last}. Blank rows mean 'not measured that day'.")
+    else:
+        lines.append("# vo2_max: no reading in this window (it is measured only every few weeks). "
+                     "Widen start_date to find the most recent value before assuming none exists.")
     return "\n".join(lines) + (_TRUNC_NOTE if (t1 or t2 or t3) else "")
 
 

@@ -16,12 +16,12 @@ stress, and next-day readiness?"* in one reasoning step.
 
 | Tool | What it returns | Default window |
 |------|-----------------|----------------|
-| `oura_get_daily_summary` | **Start here.** One row/day: readiness, sleep & activity scores, total sleep, resting HR, HRV, temp deviation, steps, active calories, daytime stress. The cross-source join table. | 30 days |
+| `oura_get_daily_summary` | **Start here.** One row/day: readiness, sleep & activity scores, total sleep, bedtime, resting HR, HRV, respiratory rate, temp deviation, breathing disturbance, steps, active calories, daytime stress. The cross-source join table. | 30 days |
 | `oura_get_sleep_detail` | Per-night architecture: bedtime, sleep stages (deep/REM/light), efficiency, latency, avg/lowest HR, HRV, respiratory rate. | 14 days |
 | `oura_get_readiness_detail` | Readiness with every contributor (hrv_balance, resting HR, recovery index, body temp, previous-day activity, sleep balance…) — explains *why* readiness moved. | 30 days |
 | `oura_get_stress_resilience` | Daytime stress vs. recovery minutes, day summary, and long-term resilience level + contributors. | 30 days |
 | `oura_get_workouts` | Workouts as logged by Oura — reconcile against Strava, catch missed sessions, see intensity labels. | 30 days |
-| `oura_get_baselines` | Slow-moving baselines: overnight SpO2, breathing disturbance, cardiovascular/vascular age, VO2 max. | 90 days |
+| `oura_get_baselines` | Slow-moving baselines: overnight SpO2, breathing disturbance, **pulse wave velocity** (arterial stiffness), vascular age, VO2 max. | 90 days |
 | `oura_get_heart_rate` | Fine-grained HR timeseries, tagged by source (awake/rest/sleep/workout). Aggregated stats by default. | 24 hours |
 
 All output is compact CSV with units stated in the column names.
@@ -129,5 +129,13 @@ the training-to-recovery signal this server is built to surface.
 - Dates are ISO `YYYY-MM-DD` and the range is inclusive. Heart rate uses ISO 8601 datetimes.
 - Some metrics are sparse or ring/firmware-dependent (VO2 max, cardiovascular age, resilience
   need enough history); rows show blanks where a metric wasn't measured.
+- **VO2 max is a measurement *event*, not a daily value** — often only a few readings per
+  quarter, so most rows are blank by design. `oura_get_baselines` appends a footer with the
+  latest reading in the window so blanks aren't misread as "no data."
+- **Overnight SpO2 must be enabled in the Oura app** (Settings → your ring) and needs sleep
+  sessions longer than ~3 hours to register; it also increases battery drain.
+- `pulse_wave_velocity_ms` is the raw arterial-stiffness measure (lower = more elastic);
+  `vascular_age_years` is a derived presentation of the same signal. Prefer PWV for tracking
+  real change over time.
 - Oura's rate limit is ~5000 requests/day; tools default to modest windows and paginate
   automatically.

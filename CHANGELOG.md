@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-14
+
+Metric-coverage release. An audit against the live API found several high-value fields
+present in endpoints the server already called but never surfaced.
+
+### Added
+
+- `oura_get_baselines` now reports **`pulse_wave_velocity_ms`** — the raw arterial-stiffness
+  measurement from `daily_cardiovascular_age`. Previously only the derived `vascular_age` was
+  exposed, which meant the server surfaced a cooked presentation while hiding the underlying
+  measurement. PWV is the clinically meaningful vascular metric of the two.
+- `oura_get_daily_summary` now includes **`bedtime`**, **`resp_rate_brpm`**, and
+  **`breathing_disturbance_idx`**. Respiratory rate and breathing disturbance are leading
+  illness/strain indicators; bedtime anchors sleep-timing analysis. All three were already
+  available in endpoints the tool fetched (`sleep`, `daily_spo2`) but were dropped on the floor.
+
+### Fixed
+
+- `vo2_max` blanks were misleading. VO2 max is a sparse measurement *event* (roughly a handful
+  of readings per quarter), not a daily value, so most rows are legitimately blank — but an agent
+  reading the CSV could reasonably conclude no VO2 data existed at all. `oura_get_baselines` now
+  appends a footer reporting the count and the most recent reading in the window (or, if none,
+  says so explicitly and suggests widening `start_date`). No endpoint bug: `vO2_max` was and
+  remains the correct path; every other casing 404s.
+
 ## [0.1.1] - 2026-07-02
 
 ### Fixed
@@ -51,6 +76,7 @@ for training and recovery analysis.
 - Documentation: README with tool reference and an Oura + Strava usage/examples section,
   `docs/SETUP.md` setup & troubleshooting guide, and `claude_desktop_config.example.json`.
 
-[Unreleased]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/echocharlie/oura-mcp-server/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/echocharlie/oura-mcp-server/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/echocharlie/oura-mcp-server/releases/tag/v0.1.0
